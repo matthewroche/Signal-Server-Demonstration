@@ -1,0 +1,13 @@
+# Virtualenv
+# http://iamzed.com/2009/05/07/a-primer-on-virtualenv/
+Server/env
+Server/env/.Python
+Server/env/[Bb]in
+Server/env/[Ii]nclude
+Server/env/[Ll]ib
+Server/env/[Ll]ib64
+Server/env/[Ll]ocal
+Server/env/[Ss]cripts
+Server/env/pyvenv.cfg
+Server/env/.venv
+Server/env/pip-selfcheck.json
