@@ -1,5 +1,4 @@
-from django.conf.urls import url
-from rest_framework.urlpatterns import format_suffix_patterns
+from django.conf.urls import url, include
 from api import views
 
 urlpatterns = [
@@ -8,6 +7,6 @@ urlpatterns = [
     url(r'^prekeybundle/(?P<requestedUsername>[0-9a-z]+)/$', views.PreKeyBundleView.as_view()),
     url(r'^prekeys/$', views.UserPreKeys.as_view()),
     url(r'^signedprekey/$', views.UserSignedPreKeys.as_view()),
+    url(r'^auth/', include('djoser.urls')),
+    url(r'^auth/', include('djoser.urls.jwt')),
 ]
-
-urlpatterns = format_suffix_patterns(urlpatterns)

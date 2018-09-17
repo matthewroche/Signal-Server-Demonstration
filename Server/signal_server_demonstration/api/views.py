@@ -1,9 +1,11 @@
 from api.models import Message, UserDetails
 from api.serializers import MessageSerializer, UserDetailsSerializer, PreKeyBundleSerializer
+
 from django.http import Http404
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, permissions
+
 import json
 from urllib.parse import unquote, quote
 
@@ -19,14 +21,14 @@ class MessageList(APIView):
             raise Http404
 
     # User can get a list of messages for which they are the recipient
-    def get(self, request, format=None):
+    def get(self, request):
         user = self.request.user
         messages = Message.objects.filter(recipient=user).all()
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
 
     # User can post a message, and they will be defined as the sender
-    def post(self, request, format=None):
+    def post(self, request):
         user = self.request.user.username
         messageData = request.data
         messageData['sender'] = user
@@ -37,7 +39,7 @@ class MessageList(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     # User can delete any message for which they are the recipient
-    def delete(self, request, format=None):
+    def delete(self, request):
         user = self.request.user.username
         message = self.get_object(request.data.get('id'))
         if (message.recipient==user):
@@ -46,12 +48,15 @@ class MessageList(APIView):
         return Response(status=status.HTTP_403_FORBIDDEN)
         
 class UserDetail(APIView):
-    def get(self, request, format=None):
-        user = self.request.user
-        userDetails = UserDetails.objects.get(username=user)
-        serializer = UserDetailsSerializer(userDetails)
-        return Response(serializer.data)
-    def post(self, request, format=None):
+    def get(self, request):
+        try:
+            user = self.request.user
+            userDetails = UserDetails.objects.get(username=user)
+            serializer = UserDetailsSerializer(userDetails)
+            return Response(serializer.data)
+        except UserDetails.DoesNotExist:
+            raise Http404
+    def post(self, request):
         user = self.request.user.username
         userAlreadyExists = UserDetails.objects.filter(username=user).count() != 0
         if (userAlreadyExists):
@@ -59,13 +64,14 @@ class UserDetail(APIView):
         else: 
             userData = request.data
             userData['username'] = user
+            # Convert array of prekeys to JSON for storage
+            userData['preKeys'] = json.dumps(userData['preKeys'])
             serializer = UserDetailsSerializer(data=userData)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    def delete(self, request, format=None):
-        # Todo: Remove this, users should not be able to delete - testing only
+    def delete(self, requested):
         user = self.request.user.username
         userObjects = UserDetails.objects.filter(username=user)
         for obj in userObjects:
@@ -74,14 +80,14 @@ class UserDetail(APIView):
 
 
 class PreKeyBundleView(APIView):
-    def get(self, request, format=None, **kwargs):
+    def get(self, request, **kwargs):
 
         # Get user details object
         userDetails = UserDetails.objects.get(username=kwargs['requestedUsername'])
 
         # Build pre key bundle, removing a preKey from the requested user's list
         # The JSON is URL encoded
-        preKeys = json.loads(unquote(userDetails.preKeys))
+        preKeys = json.loads(userDetails.preKeys)
         preKeyToReturn = preKeys.pop(0)
         preKeyBundle = userDetails.__dict__
         preKeyBundle.pop('preKeys')
@@ -89,27 +95,26 @@ class PreKeyBundleView(APIView):
         serializer = PreKeyBundleSerializer(preKeyBundle)
 
         # Update stored pre key
-        userDetails.preKeys = quote(json.dumps(preKeys))
+        userDetails.preKeys = json.dumps(preKeys)
         userDetails.save()
 
         # Return bundle
         return Response(serializer.data)
 
 class UserPreKeys(APIView):
-    def post(self, request, format=None):
+    def post(self, request):
         user = self.request.user.username
         userAlreadyExists = UserDetails.objects.filter(username=user).count() != 0
         if (userAlreadyExists):
 
             newPreKeys = request.data['preKeys']
-            newPreKeys = json.loads(unquote(newPreKeys))
             
             userDetails = UserDetails.objects.get(username=user)
             currentPreKeys = userDetails.preKeys
-            currentPreKeys = json.loads(unquote(currentPreKeys))
+            currentPreKeys = json.loads(currentPreKeys)
 
             currentPreKeys.extend(newPreKeys)
-            userDetails.preKeys = quote(json.dumps(currentPreKeys))
+            userDetails.preKeys = json.dumps(currentPreKeys)
             userDetails.save()
 
             return Response(status=status.HTTP_200_OK)
@@ -117,7 +122,7 @@ class UserPreKeys(APIView):
             return Response(status=status.HTTP_400_BAD_REQUEST)
 
 class UserSignedPreKeys(APIView):
-    def post(self, request, format=None):
+    def post(self, request):
         user = self.request.user.username
         userAlreadyExists = UserDetails.objects.filter(username=user).count() != 0
         if (userAlreadyExists):
