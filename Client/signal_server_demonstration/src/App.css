@@ -1,0 +1,71 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  animation: App-logo-spin infinite 20s linear;
+  height: 80px;
+}
+
+.App-header {
+  background-color: #222;
+  height: 150px;
+  padding: 20px;
+  color: white;
+}
+
+.App-title {
+  font-size: 1.5em;
+}
+
+.App-intro {
+  font-size: large;
+}
+
+@keyframes App-logo-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.User {
+  border: 1px solid black;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.User-Title {
+  font-weight: bold;
+}
+
+.User-Recipient-Select {
+  margin-right: 10px;
+}
+
+.User-Content-Holder {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  height: 200px;
+  width: 100%;
+}
+
+.User-Send-Message-Column {
+  width: 40%;
+}
+
+.User-Received-Messages-Column {
+  width: 40%;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+.User-Received-Message {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  padding-left: 10px;   
+}
+
+.User-Received-Message p {
+  margin: 3px 0px;
+}

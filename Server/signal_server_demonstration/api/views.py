@@ -1,6 +1,6 @@
-from api.models import Message, Profile, PreKey, SignedPreKey
+from api.models import Message, Device, PreKey, SignedPreKey
 from django.contrib.auth.models import User
-from api.serializers import MessageSerializer, ProfileSerializer, PreKeyBundleSerializer, PreKeySerializer, SignedPreKeySerializer
+from api.serializers import MessageSerializer, DeviceSerializer, PreKeyBundleSerializer, PreKeySerializer, SignedPreKeySerializer
 from django.core.exceptions import PermissionDenied
 
 from django.http import Http404
@@ -47,41 +47,61 @@ class MessageList(APIView):
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(status=status.HTTP_403_FORBIDDEN)
         
-class ProfileView(APIView):
-    def get(self, request):
+class UserView(APIView):
+    def get(self, request, **kwargs):
+        user = self.request.user
+        devices = []
+        for device in user.device_set.all():
+            deviceDict = device.__dict__
+            deviceDict['preKeys'] = device.prekey_set.all()
+            deviceDict['signedPreKey'] = device.signedprekey
+            devices.append(DeviceSerializer(deviceDict).data)
+        return Response(devices, status=status.HTTP_200_OK)
+
+class DeviceView(APIView):
+    def get(self, request, **kwargs):
         try:
             user = self.request.user
-            profile = Profile.objects.get(user=user)
-            profileDict = profile.__dict__
-            profileDict['preKeys'] = profile.prekey_set.all()
-            profileDict['signedPreKey'] = profile.signedprekey
-            serializer = ProfileSerializer(profileDict)
+            registrationId = kwargs['deviceRegistrationId']
+            device = Device.objects.get(user=user, registrationId=registrationId)
+            deviceDict = device.__dict__
+            deviceDict['preKeys'] = device.prekey_set.all()
+            deviceDict['signedPreKey'] = device.signedprekey
+            serializer = DeviceSerializer(deviceDict)
             return Response(serializer.data, status=status.HTTP_200_OK)
-        except Profile.DoesNotExist:
-            return errors.no_profile
-    def post(self, request):
+        except Device.DoesNotExist:
+            return errors.no_device
+    def post(self, request, **kwargs):
 
+        try:
+
+            user = self.request.user
+            registrationId = kwargs['deviceRegistrationId']
+
+            if Device.objects.filter(user=user, registrationId=registrationId).exists():
+                return errors.device_exists
+
+            deviceData = request.data
+            serializer = DeviceSerializer(data=deviceData, context={'user': user})
+
+            if not serializer.is_valid():
+                return errors.invalidData(serializer.errors)
+                
+            serializer.save()
+            return Response({"code": "device_created", "message": "Device successfully created"}, status=status.HTTP_201_CREATED)
+
+        except PermissionDenied:
+            return errors.reached_max_devices
+
+
+    def delete(self, requested, **kwargs):
         user = self.request.user
-
-        if Profile.objects.filter(user=user).exists():
-            return errors.profile_exists
-
-        userData = request.data
-        serializer = ProfileSerializer(data=userData, context={'user': user})
-
-        if not serializer.is_valid():
-            return errors.invalidData(serializer.errors)
-            
-        serializer.save()
-        return Response({"code": "profile_created", "message": "Profile successfully created"}, status=status.HTTP_201_CREATED)
-
-    def delete(self, requested):
-        user = self.request.user
-        if not Profile.objects.filter(user=user).exists():
-            return errors.no_profile
-        profile = Profile.objects.get(user=user)
-        profile.delete()
-        return Response({"code": "profile_deleted", "message": "Profile successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
+        registrationId = kwargs['deviceRegistrationId']
+        if not Device.objects.filter(user=user, registrationId=registrationId).exists():
+            return errors.no_device
+        device = Device.objects.get(user=user, registrationId=registrationId)
+        device.delete()
+        return Response({"code": "device_deleted", "message": "Device successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
 
 
 class PreKeyBundleView(APIView):
@@ -90,46 +110,52 @@ class PreKeyBundleView(APIView):
         # Get user details object
         user = User.objects.get(username=kwargs['requestedUsername'])
 
-        if not Profile.objects.filter(user=user).exists():
-            return errors.no_profile
+        if not Device.objects.filter(user=user).exists():
+            return errors.no_device
 
-        profile = user.profile
+        devices = user.device_set.all()
+        serialisedDeviceData = []
 
-        if profile.prekey_set.count() == 0:
-            # Handle no pre keys available
-            return errors.no_prekeys
+        for device in devices:
+            if device.prekey_set.count() == 0:
+                # Handle no pre keys available
+                return errors.no_prekeys
 
-        # Build pre key bundle, removing a preKey from the requested user's list
-        preKeyToReturn = profile.prekey_set.all()[:1].get()
-        signedPreKey = profile.signedprekey
+            # Build pre key bundle, removing a preKey from the requested user's list
+            preKeyToReturn = device.prekey_set.all()[:1].get()
+            signedPreKey = device.signedprekey
+        
+            preKeyBundle = device.__dict__
+            preKeyBundle['preKey'] = preKeyToReturn
+            preKeyBundle['signedPreKey'] = signedPreKey
+            serializer = PreKeyBundleSerializer(preKeyBundle)
 
-        preKeyBundle = profile.__dict__
-        preKeyBundle['preKey'] = preKeyToReturn
-        preKeyBundle['signedPreKey'] = signedPreKey
-        serializer = PreKeyBundleSerializer(preKeyBundle)
+            # Update stored pre key
+            preKeyToReturn.delete()
 
-        # Update stored pre key
-        preKeyToReturn.delete()
+            print(serializer.data)
+            serialisedDeviceData.append(serializer.data)
 
         # Return bundle
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serialisedDeviceData, status=status.HTTP_200_OK)
             
         
 
 class UserPreKeys(APIView):
-    def post(self, request):
+    def post(self, request, **kwargs):
 
         try: 
 
             user = self.request.user
+            registrationId = kwargs['deviceRegistrationId']
 
-            if not Profile.objects.filter(user=user).exists():
-                return errors.no_profile
+            if not Device.objects.filter(user=user, registrationId=registrationId).exists():
+                return errors.no_device
                 
             newPreKeys = request.data['preKeys']
 
             for x in newPreKeys:
-                serializer = PreKeySerializer(data=x, context={'user': user})
+                serializer = PreKeySerializer(data=x, context={'user': user, 'registrationId': registrationId})
 
                 if not serializer.is_valid():
                     return errors.invalidData(serializer.errors)
@@ -143,20 +169,22 @@ class UserPreKeys(APIView):
         
 
 class UserSignedPreKeys(APIView):
-    def post(self, request):
+    def post(self, request, **kwargs):
 
         user = self.request.user
+        registrationId = kwargs['deviceRegistrationId']
 
-        if not Profile.objects.filter(user=user).exists():
-            return errors.no_profile
+        if not Device.objects.filter(user=user, registrationId=registrationId).exists():
+            return errors.no_device
             
+        device = Device.objects.filter(user=user, registrationId=registrationId).get()
         newSignedPreKey = request.data['signedPreKey']
-        serializer = SignedPreKeySerializer(data=newSignedPreKey, context={'user': user})
+        serializer = SignedPreKeySerializer(data=newSignedPreKey, context={'user': user, 'registrationId': registrationId})
 
         if not serializer.is_valid():
             return errors.invalidData(serializer.errors)
             
-        user.profile.signedprekey.delete()
+        device.signedprekey.delete()
         serializer.save()
         return Response({"code": "signed_prekey_stored", "message": "Signed prekey successfully stored"}, status=status.HTTP_200_OK)
             

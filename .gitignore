@@ -11,3 +11,14 @@ Server/env/[Ss]cripts
 Server/env/pyvenv.cfg
 Server/env/.venv
 Server/env/pip-selfcheck.json
+Client/*/node_modules
+Client/*/coverage
+Client/*/build
+Client/*/.DS_Store
+Client/*/.env.local
+Client/*/.env.development.local
+Client/*/.env.test.local
+Client/*/.env.production.local
+Client/*/npm-debug.log*
+Client/*/yarn-debug.log*
+Client/*/yarn-error.log*

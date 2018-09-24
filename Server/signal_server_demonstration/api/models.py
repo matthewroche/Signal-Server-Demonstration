@@ -11,20 +11,20 @@ class Message(models.Model):
     class Meta:
         ordering = ('created',)
 
-class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+class Device(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     # Identity key length is 33 text characters
     identityKey = models.CharField(max_length=33, blank=False)
     registrationId = models.PositiveIntegerField(blank=False)
 
 class PreKey(models.Model):
-    owner = models.ForeignKey(Profile, on_delete=models.CASCADE)
+    device = models.ForeignKey(Device, on_delete=models.CASCADE)
     keyId = models.PositiveIntegerField(blank=False)
     # Public key length is 33 text characters
     publicKey = models.CharField(max_length=33, blank=False)
 
 class SignedPreKey(models.Model):
-    owner = models.OneToOneField(Profile, on_delete=models.CASCADE)
+    device = models.OneToOneField(Device, on_delete=models.CASCADE)
     keyId = models.PositiveIntegerField(blank=False)
     # Public key length is 33 text characters
     publicKey = models.CharField(max_length=33, blank=False)
