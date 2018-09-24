@@ -1,4 +1,6 @@
 from django.db import models
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
 
 class Message(models.Model):
     created = models.DateTimeField(auto_now_add=True)
@@ -9,10 +11,22 @@ class Message(models.Model):
     class Meta:
         ordering = ('created',)
 
-class UserDetails(models.Model):
-    username = models.CharField(max_length=100, blank=False)
-    identityKey = models.CharField(max_length=100, blank=False)
-    registrationId = models.CharField(max_length=100, blank=False)
-    # Store pre keys in a JSON encoded string
-    preKeys = models.CharField(max_length=10000, blank=False)
-    signedPreKey = models.CharField(max_length=100, blank=False)
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    # Identity key length is 33 text characters
+    identityKey = models.CharField(max_length=33, blank=False)
+    registrationId = models.PositiveIntegerField(blank=False)
+
+class PreKey(models.Model):
+    owner = models.ForeignKey(Profile, on_delete=models.CASCADE)
+    keyId = models.PositiveIntegerField(blank=False)
+    # Public key length is 33 text characters
+    publicKey = models.CharField(max_length=33, blank=False)
+
+class SignedPreKey(models.Model):
+    owner = models.OneToOneField(Profile, on_delete=models.CASCADE)
+    keyId = models.PositiveIntegerField(blank=False)
+    # Public key length is 33 text characters
+    publicKey = models.CharField(max_length=33, blank=False)
+    # Signature length is 64 text characters
+    signature = models.CharField(max_length=64, blank=False)

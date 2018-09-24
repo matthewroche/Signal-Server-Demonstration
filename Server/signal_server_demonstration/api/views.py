@@ -1,19 +1,19 @@
-from api.models import Message, UserDetails
-from api.serializers import MessageSerializer, UserDetailsSerializer, PreKeyBundleSerializer
+from api.models import Message, Profile, PreKey, SignedPreKey
+from django.contrib.auth.models import User
+from api.serializers import MessageSerializer, ProfileSerializer, PreKeyBundleSerializer, PreKeySerializer, SignedPreKeySerializer
+from django.core.exceptions import PermissionDenied
 
 from django.http import Http404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from api import errors
 
 import json
 from urllib.parse import unquote, quote
 
 
 class MessageList(APIView):
-    """
-    List all messages, or create a new message.
-    """
     def get_object(self, pk):
         try:
             return Message.objects.get(pk=pk)
@@ -33,10 +33,10 @@ class MessageList(APIView):
         messageData = request.data
         messageData['sender'] = user
         serializer = MessageSerializer(data=messageData)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return errors.invalidData(serializer.errors)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # User can delete any message for which they are the recipient
     def delete(self, request):
@@ -47,93 +47,116 @@ class MessageList(APIView):
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(status=status.HTTP_403_FORBIDDEN)
         
-class UserDetail(APIView):
+class ProfileView(APIView):
     def get(self, request):
         try:
             user = self.request.user
-            userDetails = UserDetails.objects.get(username=user)
-            serializer = UserDetailsSerializer(userDetails)
-            return Response(serializer.data)
-        except UserDetails.DoesNotExist:
-            raise Http404
+            profile = Profile.objects.get(user=user)
+            profileDict = profile.__dict__
+            profileDict['preKeys'] = profile.prekey_set.all()
+            profileDict['signedPreKey'] = profile.signedprekey
+            serializer = ProfileSerializer(profileDict)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Profile.DoesNotExist:
+            return errors.no_profile
     def post(self, request):
-        user = self.request.user.username
-        userAlreadyExists = UserDetails.objects.filter(username=user).count() != 0
-        if (userAlreadyExists):
-            return Response(status=status.HTTP_403_FORBIDDEN)
-        else: 
-            userData = request.data
-            userData['username'] = user
-            # Convert array of prekeys to JSON for storage
-            userData['preKeys'] = json.dumps(userData['preKeys'])
-            serializer = UserDetailsSerializer(data=userData)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        user = self.request.user
+
+        if Profile.objects.filter(user=user).exists():
+            return errors.profile_exists
+
+        userData = request.data
+        serializer = ProfileSerializer(data=userData, context={'user': user})
+
+        if not serializer.is_valid():
+            return errors.invalidData(serializer.errors)
+            
+        serializer.save()
+        return Response({"code": "profile_created", "message": "Profile successfully created"}, status=status.HTTP_201_CREATED)
+
     def delete(self, requested):
-        user = self.request.user.username
-        userObjects = UserDetails.objects.filter(username=user)
-        for obj in userObjects:
-            obj.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        user = self.request.user
+        if not Profile.objects.filter(user=user).exists():
+            return errors.no_profile
+        profile = Profile.objects.get(user=user)
+        profile.delete()
+        return Response({"code": "profile_deleted", "message": "Profile successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
 
 
 class PreKeyBundleView(APIView):
     def get(self, request, **kwargs):
 
         # Get user details object
-        userDetails = UserDetails.objects.get(username=kwargs['requestedUsername'])
+        user = User.objects.get(username=kwargs['requestedUsername'])
+
+        if not Profile.objects.filter(user=user).exists():
+            return errors.no_profile
+
+        profile = user.profile
+
+        if profile.prekey_set.count() == 0:
+            # Handle no pre keys available
+            return errors.no_prekeys
 
         # Build pre key bundle, removing a preKey from the requested user's list
-        # The JSON is URL encoded
-        preKeys = json.loads(userDetails.preKeys)
-        preKeyToReturn = preKeys.pop(0)
-        preKeyBundle = userDetails.__dict__
-        preKeyBundle.pop('preKeys')
+        preKeyToReturn = profile.prekey_set.all()[:1].get()
+        signedPreKey = profile.signedprekey
+
+        preKeyBundle = profile.__dict__
         preKeyBundle['preKey'] = preKeyToReturn
+        preKeyBundle['signedPreKey'] = signedPreKey
         serializer = PreKeyBundleSerializer(preKeyBundle)
 
         # Update stored pre key
-        userDetails.preKeys = json.dumps(preKeys)
-        userDetails.save()
+        preKeyToReturn.delete()
 
         # Return bundle
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        
 
 class UserPreKeys(APIView):
     def post(self, request):
-        user = self.request.user.username
-        userAlreadyExists = UserDetails.objects.filter(username=user).count() != 0
-        if (userAlreadyExists):
 
+        try: 
+
+            user = self.request.user
+
+            if not Profile.objects.filter(user=user).exists():
+                return errors.no_profile
+                
             newPreKeys = request.data['preKeys']
-            
-            userDetails = UserDetails.objects.get(username=user)
-            currentPreKeys = userDetails.preKeys
-            currentPreKeys = json.loads(currentPreKeys)
 
-            currentPreKeys.extend(newPreKeys)
-            userDetails.preKeys = json.dumps(currentPreKeys)
-            userDetails.save()
+            for x in newPreKeys:
+                serializer = PreKeySerializer(data=x, context={'user': user})
 
-            return Response(status=status.HTTP_200_OK)
-        else: 
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+                if not serializer.is_valid():
+                    return errors.invalidData(serializer.errors)
+
+                serializer.save()
+
+            return Response({"code": "prekeys_stored", "message": "Prekeys successfully stored"}, status=status.HTTP_200_OK)
+
+        except PermissionDenied:
+            return errors.reached_max_prekeys
+        
 
 class UserSignedPreKeys(APIView):
     def post(self, request):
-        user = self.request.user.username
-        userAlreadyExists = UserDetails.objects.filter(username=user).count() != 0
-        if (userAlreadyExists):
 
-            newSignedPreKey = request.data['signedPreKey']
+        user = self.request.user
+
+        if not Profile.objects.filter(user=user).exists():
+            return errors.no_profile
             
-            userDetails = UserDetails.objects.get(username=user)
-            userDetails.signedPreKey = newSignedPreKey
-            userDetails.save()
+        newSignedPreKey = request.data['signedPreKey']
+        serializer = SignedPreKeySerializer(data=newSignedPreKey, context={'user': user})
 
-            return Response(status=status.HTTP_200_OK)
-        else: 
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return errors.invalidData(serializer.errors)
+            
+        user.profile.signedprekey.delete()
+        serializer.save()
+        return Response({"code": "signed_prekey_stored", "message": "Signed prekey successfully stored"}, status=status.HTTP_200_OK)
             
