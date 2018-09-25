@@ -15,12 +15,15 @@ class App extends Component {
     receivedMessages: [] // Array of recived message objects structure {sender: String, recipient: String, content: String}
   }
 
-  username = undefined
-  password = undefined
-  address = undefined
-  jwt = undefined
   signedPreKeyCreationDate = undefined
   api = new Api(new SignalProtocolStore())
+
+  componentDidMount = async () => {
+    const userobject = await this.api.checkUserExists()
+    if (userobject) {
+      this.setState({displayType: 'message'})
+    }
+  }
 
   // Changes the username in state when the input changes
   handleUserNameTextChange = (e) => {
@@ -40,10 +43,6 @@ class App extends Component {
   handleRegisterSubmit = async (e) => {
     const registerResult = await this.api.registerNewUser(this.state.usernameText, this.state.passwordText)
     if (registerResult.token) {
-      this.username = this.state.usernameText
-      this.password = this.state.passwordText
-      this.jwt = registerResult.token
-      this.address = registerResult.address
       this.setState({displayType: 'message'})
     } 
   }
@@ -52,12 +51,14 @@ class App extends Component {
   handleLogInSubmit = async (e) => {
     const loginResult = await this.api.logUserIn(this.state.usernameText, this.state.passwordText)
     if (loginResult.token) {
-      this.username = this.state.usernameText
-      this.password = this.state.passwordText
-      this.jwt = loginResult.token
-      this.address = loginResult.address
       this.setState({displayType: 'message'})
     }
+  }
+
+  // Logs a user out and deletes their device
+  handleLogOutSubmit = async (e) => {
+    await this.api.logUserOut()
+    this.setState({displayType: 'register'})
   }
 
   // Handles changing the message text when the input changes
@@ -122,6 +123,8 @@ class App extends Component {
                     <input placeholder="Message" value={this.state.messageText} onChange={this.handleMessageTextChange} />
                     <button type="send">Submit</button>
                   </form>
+
+                  <button onClick={this.handleLogOutSubmit}>Log Out</button>
 
                 </div>
                 <div className="User-Received-Messages-Column">
