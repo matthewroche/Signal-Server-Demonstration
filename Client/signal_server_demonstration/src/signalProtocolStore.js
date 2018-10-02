@@ -105,6 +105,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(res);
   },
   storePreKey: function(keyId, keyPair) {
+    keyPair = Object.assign({}, keyPair)
     keyPair = this.keypairToString(keyPair)
     return Promise.resolve(this.put('25519KeypreKey' + keyId, keyPair));
   },
@@ -152,6 +153,7 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(data);
   },
   storeSignedPreKey: function(keyId, keyPair) {
+    keyPair = Object.assign({}, keyPair)
     keyPair = this.keypairToString(keyPair)
     const creationDate = Date.now();
     return Promise.resolve(this.put('25519KeysignedKey' + keyId, JSON.stringify({keypair: keyPair, creationDate: creationDate})));

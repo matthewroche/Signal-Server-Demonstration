@@ -4,14 +4,14 @@ export default {
     
     StaticArrayBufferProto: new ArrayBuffer().__proto__,
     
-    toString: (thing) => {
+    toString: (thing, encoding='binary') => {
         if (typeof thing === 'string') {
             return thing;
         }
-        return new ByteBuffer.wrap(thing).toString('binary');
+        return new ByteBuffer.wrap(thing).toString(encoding);
     },
 
-    toArrayBuffer: (thing) => {
+    toArrayBuffer: (thing, encoding='binary') => {
         if (thing === undefined) {
             return undefined;
         }
@@ -28,7 +28,7 @@ export default {
         } else {
             throw new Error("Tried to convert a non-string of type " + typeof thing + " to an array buffer");
         }
-        return new ByteBuffer.wrap(thing, 'binary').toArrayBuffer();
+        return new ByteBuffer.wrap(thing, encoding).toArrayBuffer();
     },
 
     isEqual: (a, b) => {

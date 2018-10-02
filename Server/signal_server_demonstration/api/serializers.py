@@ -18,7 +18,7 @@ class MessageSerializer(serializers.Serializer):
 
 class PreKeySerializer(serializers.Serializer):
     keyId = serializers.IntegerField(min_value=0, max_value= 999999)
-    publicKey = serializers.CharField(max_length=33, min_length=33)
+    publicKey = serializers.CharField(max_length=44, min_length=44)
     def create(self, validated_data):
         user = self.context['user']
         registrationId = self.context['registrationId']
@@ -30,8 +30,8 @@ class PreKeySerializer(serializers.Serializer):
 
 class SignedPreKeySerializer(serializers.Serializer):
     keyId = serializers.IntegerField(min_value=0, max_value=999999)
-    publicKey = serializers.CharField(max_length=33, min_length=33)
-    signature = serializers.CharField(max_length=64, min_length=64)
+    publicKey = serializers.CharField(max_length=44, min_length=44)
+    signature = serializers.CharField(max_length=88, min_length=88)
     def create(self, validated_data):
         user = self.context['user']
         registrationId = self.context['registrationId']
@@ -39,7 +39,7 @@ class SignedPreKeySerializer(serializers.Serializer):
         return SignedPreKey.objects.create(device=deviceReference, **validated_data)
 
 class DeviceSerializer(serializers.Serializer):
-    identityKey = serializers.CharField(max_length=33, min_length=33)
+    identityKey = serializers.CharField(max_length=44, min_length=44)
     address = serializers.CharField(max_length=100)
     registrationId = serializers.IntegerField(min_value=0, max_value=999999)
     preKeys = PreKeySerializer(many=True)

@@ -177,18 +177,18 @@ export default class Api {
                 mode: "cors",
                 body: JSON.stringify({
                     address: address.toString(), // Turn address object to string
-                    identityKey: util.toString((await this.store.getIdentityKeyPair()).pubKey), 
+                    identityKey: util.toString((await this.store.getIdentityKeyPair()).pubKey, 'base64'), 
                     registrationId: registrationId,
                     preKeys: preKeys.map((i) => {
                         return {
                             keyId: i.keyId, 
-                            publicKey: util.toString(i.keyPair.pubKey)
+                            publicKey: util.toString(i.keyPair.pubKey, 'base64')
                         }
                     }),
                     signedPreKey: {
                         keyId: 1, 
-                        publicKey: util.toString(signedPreKey.keyPair.pubKey), 
-                        signature: util.toString(signedPreKey.signature)
+                        publicKey: util.toString(signedPreKey.keyPair.pubKey, 'base64'), 
+                        signature: util.toString(signedPreKey.signature, 'base64')
                     }
                 }),
                 headers: {
@@ -392,7 +392,7 @@ export default class Api {
                     await this.store.storePreKey(i, preKeys.slice(-1)[0].keyPair); // Store key locally
                 }
                 preKeys = preKeys.map((i) => {
-                    return {keyId: i.keyId, publicKey: util.toString(i.keyPair.pubKey)} // Strip private keys before sending to server
+                    return {keyId: i.keyId, publicKey: util.toString(i.keyPair.pubKey, 'base64')} // Strip private keys before sending to server
                 })
                 let response = await this.fetchWithJWTCheck(this.baseUrl+"prekeys/"+registrationId+"/", {
                     method: "POST",
@@ -440,8 +440,8 @@ export default class Api {
                     mode: "cors",
                     body: JSON.stringify({signedPreKey: { //Strip privKey
                         keyId: newSignedPreKeyId, 
-                        publicKey: util.toString(signedPreKey.keyPair.pubKey), 
-                        signature: util.toString(signedPreKey.signature)
+                        publicKey: util.toString(signedPreKey.keyPair.pubKey, 'base64'), 
+                        signature: util.toString(signedPreKey.signature, 'base64')
                     }}),
                     headers: {
                         "Content-Type": "application/json; charset=utf-8",
@@ -519,10 +519,12 @@ export default class Api {
     // Converts a preKeyBundle obtained from the server (in which the keys are strings) to 
     //   one useable by the signal protocol (in which keys are array buffers)
     preKeyBundleStringToArrayBuffer = (preKeyBundle) => {
-        preKeyBundle.identityKey = util.toArrayBuffer(preKeyBundle.identityKey)
-        preKeyBundle.preKey.publicKey =  util.toArrayBuffer(preKeyBundle.preKey.publicKey)
-        preKeyBundle.signedPreKey.publicKey = util.toArrayBuffer(preKeyBundle.signedPreKey.publicKey)
-        preKeyBundle.signedPreKey.signature = util.toArrayBuffer(preKeyBundle.signedPreKey.signature)
+        console.log(preKeyBundle);
+        
+        preKeyBundle.identityKey = util.toArrayBuffer(preKeyBundle.identityKey, 'base64')
+        preKeyBundle.preKey.publicKey =  util.toArrayBuffer(preKeyBundle.preKey.publicKey, 'base64')
+        preKeyBundle.signedPreKey.publicKey = util.toArrayBuffer(preKeyBundle.signedPreKey.publicKey, 'base64')
+        preKeyBundle.signedPreKey.signature = util.toArrayBuffer(preKeyBundle.signedPreKey.signature, 'base64')
         return(preKeyBundle)
     }
 
