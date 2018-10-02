@@ -3,6 +3,7 @@ from api import views
 
 urlpatterns = [
     url(r'^messages/$', views.MessageList.as_view()),
+    url(r'^messages/(?P<deviceRegistrationId>[0-9]+)/$', views.DeviceMessageList.as_view()),
     url(r'^users/$', views.UserView.as_view()),
     url(r'^users/(?P<deviceRegistrationId>[0-9]+)/$', views.DeviceView.as_view()),
     url(r'^prekeybundle/(?P<requestedUsername>[0-9a-z]+)/$', views.PreKeyBundleView.as_view()),

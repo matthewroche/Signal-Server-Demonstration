@@ -3,7 +3,7 @@ import util from './util';
 const libsignal = window.libsignal;
 
 export default function SignalProtocolStore() {
-  this.store = window.localStorage;
+  this.store = window.sessionStorage;
 }
 
 SignalProtocolStore.prototype = {
@@ -35,7 +35,8 @@ SignalProtocolStore.prototype = {
     return Promise.resolve(keypair);
   },
   getLocalRegistrationId: function() {
-    return Promise.resolve(this.get('registrationId'));
+    const registrationId = parseInt(this.get('registrationId'), 10)
+    return Promise.resolve(registrationId);
   },
   put: function(key, value) {
     if (key === undefined || value === undefined || key === null || value === null)
@@ -110,27 +111,65 @@ SignalProtocolStore.prototype = {
   removePreKey: function(keyId) {
     return Promise.resolve(this.remove('25519KeypreKey' + keyId));
   },
+  countPreKeys: function() {
+    let count = 0
+    let maxPrekeyId = 1
+    for (var id in this.store) {
+      if (id.startsWith('25519KeypreKey')) {
+        count ++
+        const prekeyId = parseInt(id.replace('25519KeypreKey', ''), 10)
+        if (prekeyId > maxPrekeyId) {
+          maxPrekeyId = prekeyId
+        }
+      }
+    }
+    return Promise.resolve({count: count, maxPrekeyId: maxPrekeyId});
+  },
 
   /* Returns a signed keypair object or undefined */
   loadSignedPreKey: function(keyId) {
     var res = this.get('25519KeysignedKey' + keyId);
     if (res !== undefined) {
-      res = this.keypairToBuffer(res)
-      res = { pubKey: res.pubKey, privKey: res.privKey };
+      res = JSON.parse(res)
+      let keypair = res.keypair
+      keypair = this.keypairToBuffer(keypair)
+      res = { pubKey: keypair.pubKey, privKey: keypair.privKey };
     }
     return Promise.resolve(res);
   },
+  /* Returns a signed keypair object or undefined */
+  loadSignedPreKeyDates: function(keyId) {
+    const data = {}
+    for (var id in this.store) {
+      if (id.startsWith('25519KeysignedKey')) {
+        var res = this.get(id);
+        res = JSON.parse(res);
+        const creationDate = res.creationDate
+        const signedPrekeyId = parseInt(id.replace('25519KeysignedKey', ''), 10)
+        data[signedPrekeyId] = creationDate
+      }
+    }
+    return Promise.resolve(data);
+  },
   storeSignedPreKey: function(keyId, keyPair) {
     keyPair = this.keypairToString(keyPair)
-    return Promise.resolve(this.put('25519KeysignedKey' + keyId, keyPair));
+    const creationDate = Date.now();
+    return Promise.resolve(this.put('25519KeysignedKey' + keyId, JSON.stringify({keypair: keyPair, creationDate: creationDate})));
   },
   removeSignedPreKey: function(keyId) {
     return Promise.resolve(this.remove('25519KeysignedKey' + keyId));
   },
 
+  checkSessionExists: function(identifier) {
+    identifier = identifier.toString()
+    var session = this.get('session' + identifier)
+    return session !== undefined
+  },
   loadSession: function(identifier) {
     var session = this.get('session' + identifier)
-    session = JSON.parse(session)
+    if (session) {
+      session = JSON.parse(session)
+    }
     return Promise.resolve(session);
   },
   storeSession: function(identifier, record) {

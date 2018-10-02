@@ -26,6 +26,16 @@ reached_max_devices = Response({
     "message": "You have reached the maximum number of devices. You cannot register more than three devices"
 }, status=status.HTTP_403_FORBIDDEN)
 
+non_existant_message = Response({
+    "code": "non-existant_message",
+    "message": "One of the messages you are trying to delete does not exist"
+}, status=status.HTTP_403_FORBIDDEN)
+
+not_message_owner = Response({
+    "code": "not_message_owner",
+    "message": "You do not own one of the messages you are trying to delete"
+}, status=status.HTTP_403_FORBIDDEN)
+
 def invalidData(errors):
     return Response({
         "code": "invalid_data",

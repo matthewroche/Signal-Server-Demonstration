@@ -14,38 +14,67 @@ from urllib.parse import unquote, quote
 
 
 class MessageList(APIView):
-    def get_object(self, pk):
-        try:
-            return Message.objects.get(pk=pk)
-        except Message.DoesNotExist:
-            raise Http404
 
-    # User can get a list of messages for which they are the recipient
-    def get(self, request):
-        user = self.request.user
-        messages = Message.objects.filter(recipient=user).all()
-        serializer = MessageSerializer(messages, many=True)
-        return Response(serializer.data)
-
-    # User can post a message, and they will be defined as the sender
+    # User can post multiple messages. They will be defined as the sender
     def post(self, request):
-        user = self.request.user.username
+
+        user = self.request.user
         messageData = request.data
-        messageData['sender'] = user
-        serializer = MessageSerializer(data=messageData)
-        if not serializer.is_valid():
-            return errors.invalidData(serializer.errors)
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        response = []
+
+        for message in messageData:
+
+            # Get sender's device object
+            if not Device.objects.filter(address= message['senderAddress']).exists():
+                return Response("Sender device does not exist", status=status.HTTP_403_FORBIDDEN)
+            senderDevice = Device.objects.get(address= message['senderAddress'])
+
+            # Get recipient's device object
+            if not Device.objects.filter(address= message['recipientAddress']).exists():
+                return Response("Recipient device does not exist", status=status.HTTP_403_FORBIDDEN)
+            recipientDevice = Device.objects.get(address= message['recipientAddress'])
+
+            serializer = MessageSerializer(data=message, context={'senderDevice': senderDevice, 'recipientDevice': recipientDevice})
+            if not serializer.is_valid():
+                response.append(serializer.errors)
+            else: 
+                serializer.save()
+                response.append(serializer.data)
+
+        return Response(response, status=status.HTTP_201_CREATED)
 
     # User can delete any message for which they are the recipient
     def delete(self, request):
-        user = self.request.user.username
-        message = self.get_object(request.data.get('id'))
-        if (message.recipient==user):
+        user = self.request.user
+        messageList = request.data
+        response = []
+
+        for messageId in messageList:
+            if not Message.objects.filter(id=messageId).exists():
+                return errors.non_existant_message
+            else:
+                message = Message.objects.get(id=messageId)
+                if not message.recipient.user == user:
+                    return errors.not_message_owner
+
+        for messageId in messageList:
             message.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        return Response(status=status.HTTP_403_FORBIDDEN)
+
+        return Response(response, status=status.HTTP_200_OK)
+
+class DeviceMessageList(APIView):
+
+    # User can get a list of messages for their device
+    def get(self, request, **kwargs):
+        user = self.request.user
+        requestedDevice = kwargs['deviceRegistrationId']
+
+        if not user.device_set.filter(registrationId=requestedDevice).exists():
+            return Response("Device does not exist", status=status.HTTP_403_FORBIDDEN)
+            
+        messages = user.device_set.get(registrationId=requestedDevice).received_messages.all()
+        serializer = MessageSerializer(messages, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
         
 class UserView(APIView):
     def get(self, request, **kwargs):
@@ -107,6 +136,9 @@ class DeviceView(APIView):
 class PreKeyBundleView(APIView):
     def get(self, request, **kwargs):
 
+        if not User.objects.filter(username= kwargs['requestedUsername']).exists():
+                return Response("User does not exist", status=status.HTTP_403_FORBIDDEN)
+
         # Get user details object
         user = User.objects.get(username=kwargs['requestedUsername'])
 
@@ -116,10 +148,14 @@ class PreKeyBundleView(APIView):
         devices = user.device_set.all()
         serialisedDeviceData = []
 
+        # Check prekey available for every device before proceeding
         for device in devices:
             if device.prekey_set.count() == 0:
                 # Handle no pre keys available
                 return errors.no_prekeys
+
+
+        for device in devices:
 
             # Build pre key bundle, removing a preKey from the requested user's list
             preKeyToReturn = device.prekey_set.all()[:1].get()
@@ -133,7 +169,6 @@ class PreKeyBundleView(APIView):
             # Update stored pre key
             preKeyToReturn.delete()
 
-            print(serializer.data)
             serialisedDeviceData.append(serializer.data)
 
         # Return bundle

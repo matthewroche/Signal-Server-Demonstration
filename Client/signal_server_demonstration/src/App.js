@@ -7,6 +7,7 @@ import SignalProtocolStore from './signalProtocolStore';
 class App extends Component {
 
   state = {
+    username: undefined,
     displayType: 'register', // alternatives: message
     usernameText: "", // Holds user name input content
     passwordText: "", // Holds password input content
@@ -16,12 +17,12 @@ class App extends Component {
   }
 
   signedPreKeyCreationDate = undefined
-  api = new Api(new SignalProtocolStore())
+  api = new Api("http://127.0.0.1:8000/", new SignalProtocolStore())
 
   componentDidMount = async () => {
-    const userobject = await this.api.checkUserExists()
+    const userobject = await this.api.checkUserExistsLocally()
     if (userobject) {
-      this.setState({displayType: 'message'})
+      this.setState({displayType: 'message', username: userobject.username})
     }
   }
 
@@ -42,23 +43,29 @@ class App extends Component {
   // Registers a user
   handleRegisterSubmit = async (e) => {
     const registerResult = await this.api.registerNewUser(this.state.usernameText, this.state.passwordText)
-    if (registerResult.token) {
-      this.setState({displayType: 'message'})
+    if (registerResult) {
+      this.setState({displayType: 'message', username: this.state.usernameText})
     } 
   }
 
   // Logs a user in a stores the JWT
   handleLogInSubmit = async (e) => {
     const loginResult = await this.api.logUserIn(this.state.usernameText, this.state.passwordText)
-    if (loginResult.token) {
-      this.setState({displayType: 'message'})
+    if (loginResult) {
+      this.setState({displayType: 'message', username: this.state.usernameText})
     }
   }
 
   // Logs a user out and deletes their device
   handleLogOutSubmit = async (e) => {
     await this.api.logUserOut()
-    this.setState({displayType: 'register'})
+    this.setState({displayType: 'register', username: undefined})
+  }
+
+  handleRecipientUserNameTextChange = (e) => {
+    this.setState({
+      recipientUserNameText: e.target.value
+    })
   }
 
   // Handles changing the message text when the input changes
@@ -71,19 +78,24 @@ class App extends Component {
   //Handles sending the message to the server
   handleSendMessage = async (e) => {
 
-    this.handleUpdateIdentity();
+    await this.api.sendMessage(this.state.messageText, this.state.recipientUserNameText)
+    alert("Sent successfully")
 
   }
 
   //Handles receiving the message
-  handleRecieveMessage = async (message) => {
+  handleCheckMessages = async () => {
 
-    this.handleUpdateIdentity();
-
-  }
-
-  // Handles registering new prekeys and signedPreKeys
-  handleUpdateIdentity = async () => {
+    const newMessages = await this.api.retrieveMessages()
+    
+    const messageArray = this.state.receivedMessages
+    for (const message of newMessages) {
+      messageArray.unshift(message)
+    }
+    if (newMessages.length === 0) {
+      alert("No new messages")
+    }
+    this.setState({receivedMessages: messageArray})
 
   }
 
@@ -118,11 +130,9 @@ class App extends Component {
 
                   <p>Send Message</p>
 
-                  <form onSubmit={this.handleSendMessage}>
-                    <input placeholder="Recipient User Name" value={this.state.messageText} onChange={this.handleMessageTextChange} />
-                    <input placeholder="Message" value={this.state.messageText} onChange={this.handleMessageTextChange} />
-                    <button type="send">Submit</button>
-                  </form>
+                  <input placeholder="Recipient User Name" value={this.state.recipientUserNameText} onChange={this.handleRecipientUserNameTextChange} />
+                  <input placeholder="Message" value={this.state.messageText} onChange={this.handleMessageTextChange} />
+                  <button onClick={this.handleSendMessage}>Submit</button>
 
                   <button onClick={this.handleLogOutSubmit}>Log Out</button>
 
@@ -130,6 +140,7 @@ class App extends Component {
                 <div className="User-Received-Messages-Column">
 
                   <p>Received Messages</p>
+                  <button onClick={this.handleCheckMessages}>Check Messages</button>
                   {this.state.receivedMessages.map((o, i) => {
                     return <div className="User-Received-Message" key={i}>
                       <p>{o.sender}: {o.content}</p>
