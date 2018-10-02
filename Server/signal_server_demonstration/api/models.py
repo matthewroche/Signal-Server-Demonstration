@@ -8,6 +8,8 @@ class Device(models.Model):
     identityKey = models.CharField(max_length=33, blank=False)
     registrationId = models.PositiveIntegerField(blank=False)
     address = models.CharField(max_length=100, blank=False)
+    class Meta:
+        unique_together = ('user', 'address',)
 
 class PreKey(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)

@@ -97,8 +97,6 @@ export default class Api {
                     "Content-Type": "application/json; charset=utf-8",
                 },
             })
-            console.log(response);
-            
             if (response.status !== 204) { //If unsuccessful deleting on the server
                 throw await this.handleFetchError("Error deleting device from server", response)
             }
@@ -158,7 +156,7 @@ export default class Api {
 
             //Create preKeys
             let preKeys = []
-            for (let i=1; i<4; i++) { // Create 4 keys initially (DO NOT CREATE A KEY WITH ID 0)
+            for (let i=1; i<11; i++) { // Create 10 keys initially (DO NOT CREATE A KEY WITH ID 0)
                 preKeys.push(await this.generatePreKey(i)) // Generate the key
                 await this.store.storePreKey(i, preKeys.slice(-1)[0].keyPair); //Store the key locally
                 // Prekeys are registered on the server below
@@ -230,6 +228,11 @@ export default class Api {
             let availableDevices = []
             let messages = []
 
+            // Get devices we already have sessions for for this user
+            const preexistingSessionsForUser = await this.store.checkSessionDeviceNamesForUser(recipientUsername)
+            console.log("We need to exclude requesting prekeys for the following devices:");
+            console.log(preexistingSessionsForUser);
+
             // Get recipient's current registered devices
             let response = await this.fetchWithJWTCheck(this.baseUrl+"prekeybundle/"+recipientUsername+"/", {
                 method: "GET",
@@ -241,6 +244,7 @@ export default class Api {
 
             if (response.status === 200) {
                 availableDevices = await response.json() //If successful parse JSON
+                console.log(availableDevices);
             } else {
                 throw await this.handleFetchError("Error getting devices", response)
             }
@@ -254,8 +258,6 @@ export default class Api {
                 const preKeyBundle = this.preKeyBundleStringToArrayBuffer(device);
 
                 // Check whether a session already exists for device
-                console.log(this.store.checkSessionExists(address));
-                
                 if (!this.store.checkSessionExists(address)) {
                     console.log("No session exists, creating new");
                     // Build session and process prekeys
@@ -357,7 +359,7 @@ export default class Api {
             }
 
             // Update prekeys and signedPrekey
-            // this.updateIdentity()
+            this.updateIdentity()
 
             return(messages)
 
@@ -531,11 +533,18 @@ export default class Api {
     // Returns:
     //   null
     handleFetchError = async (message, response) => {
-        console.error({
-            message: message,
-            response: response,
-            json: await response.clone().json()
-        })
+        if (response.status === 500) {
+            console.error({
+                message: message,
+                response: response
+            })
+        } else {
+            console.error({
+                message: message,
+                response: response,
+                json: await response.clone().json()
+            })
+        }
         return new Error(message)
     }
     

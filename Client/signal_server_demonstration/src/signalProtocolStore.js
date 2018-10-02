@@ -165,6 +165,15 @@ SignalProtocolStore.prototype = {
     var session = this.get('session' + identifier)
     return session !== undefined
   },
+  checkSessionDeviceNamesForUser: function(username) {
+    let devicesToReturn = []
+    for (var id in this.store) {
+      if (id.startsWith('session' + username)) {
+        devicesToReturn.push(parseInt(id.substring(('session' + username).length+1), 10))
+      }
+    }
+    return Promise.resolve(devicesToReturn);
+  },
   loadSession: function(identifier) {
     var session = this.get('session' + identifier)
     if (session) {

@@ -45,7 +45,9 @@ class App extends Component {
     const registerResult = await this.api.registerNewUser(this.state.usernameText, this.state.passwordText)
     if (registerResult) {
       this.setState({displayType: 'message', username: this.state.usernameText})
-    } 
+    }  else {
+      alert("There is currently a problem logging in. See readme. Retrying repetedly should eventually work")
+    }
   }
 
   // Logs a user in a stores the JWT
@@ -53,6 +55,8 @@ class App extends Component {
     const loginResult = await this.api.logUserIn(this.state.usernameText, this.state.passwordText)
     if (loginResult) {
       this.setState({displayType: 'message', username: this.state.usernameText})
+    } else {
+      alert("There is currently a problem logging in. See readme. Retrying repetedly should eventually work")
     }
   }
 
@@ -78,8 +82,10 @@ class App extends Component {
   //Handles sending the message to the server
   handleSendMessage = async (e) => {
 
-    await this.api.sendMessage(this.state.messageText, this.state.recipientUserNameText)
-    alert("Sent successfully")
+    const response = await this.api.sendMessage(this.state.messageText, this.state.recipientUserNameText)
+    if (response) {
+      alert("Sent successfully")
+    }
 
   }
 

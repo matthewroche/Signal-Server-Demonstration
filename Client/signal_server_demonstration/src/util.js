@@ -32,6 +32,7 @@ export default {
     },
 
     isEqual: (a, b) => {
+        
         // TODO: Special-case arraybuffers, etc
         if (a === undefined || b === undefined) {
             return false;
