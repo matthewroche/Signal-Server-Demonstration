@@ -167,13 +167,22 @@ SignalProtocolStore.prototype = {
     var session = this.get('session' + identifier)
     return session !== undefined
   },
-  checkSessionDeviceNamesForUser: function(username) {
+  checkPreExistingSessionsForUser: function(username) {
     let devicesToReturn = []
     for (var id in this.store) {
       if (id.startsWith('session' + username)) {
-        devicesToReturn.push(parseInt(id.substring(('session' + username).length+1), 10))
+        const sessionObject = JSON.parse(JSON.parse(this.get(id)))
+        const deviceId = parseInt(id.substring(('session' + username).length+1), 10)
+        const address = new libsignal.SignalProtocolAddress(username, deviceId);
+        for (let session in sessionObject.sessions) {
+          devicesToReturn.push({
+            registrationId: sessionObject.sessions[session].registrationId,
+            address: address.toString()
+          })
+        }
       }
     }
+    
     return Promise.resolve(devicesToReturn);
   },
   loadSession: function(identifier) {

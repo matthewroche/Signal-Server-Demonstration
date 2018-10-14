@@ -165,12 +165,12 @@ export default class Api {
             // Create signed preKey
             const signedPreKey = await this.generateSignedPreKey(await this.store.getIdentityKeyPair(), 1) // GEnerate key
             await this.store.storeSignedPreKey(1, signedPreKey.keyPair); // Store the key locally
-            // Signed prekeys are sotred on the server below
+            // Signed prekeys are stored on the server below
 
             const registrationId = await this.store.getLocalRegistrationId()
 
             // Send keys to server
-            // All keys are converted to strings
+            // All keys are converted to base64 strings
             // Only public keys are sent to the server
             let response = await this.fetchWithJWTCheck(this.baseUrl+"users/"+registrationId+"/", {
                 method: "POST",
@@ -225,16 +225,18 @@ export default class Api {
             const localDeviceAddress = await this.store.loadAddress()
 
             content = util.toArrayBuffer(content); //Turn the message string to a buffer
-            let availableDevices = []
+            let newDevices = []
             let messages = []
 
             // Get devices we already have sessions for for this user
-            const preexistingSessionsForUser = await this.store.checkSessionDeviceNamesForUser(recipientUsername)
-            console.log("We need to exclude requesting prekeys for the following devices:");
-            console.log(preexistingSessionsForUser);
+            const preexistingSessionsForUser = await this.store.checkPreExistingSessionsForUser(recipientUsername)
 
-            // Get recipient's current registered devices
-            let response = await this.fetchWithJWTCheck(this.baseUrl+"prekeybundle/"+recipientUsername+"/", {
+            // Get recipient's current registered devices, excluding those with existing sessions
+            let url = new URL(this.baseUrl+"prekeybundle/"+recipientUsername+"/")
+            const params = {exclude: JSON.stringify(preexistingSessionsForUser.map(o => o.registrationId))}
+            Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
+            
+            let response = await this.fetchWithJWTCheck(url, {
                 method: "GET",
                 mode: "cors",
                 headers: {
@@ -243,42 +245,47 @@ export default class Api {
             })
 
             if (response.status === 200) {
-                availableDevices = await response.json() //If successful parse JSON
-                console.log(availableDevices);
+                newDevices = await response.json() //If successful parse JSON
             } else {
                 throw await this.handleFetchError("Error getting devices", response)
             }
 
+            for (let device of newDevices) { // For each of the recipient's new devices
 
-            for (let device of availableDevices) { // For each of the recipient's devices
+                console.log('Creating new session for device: ' + device.address);
 
                 const address = new libsignal.SignalProtocolAddress.fromString(device.address) //Calculate recipient's address
 
                 // Need to convert keys from strings returned by server to ArrayBuffers
                 const preKeyBundle = this.preKeyBundleStringToArrayBuffer(device);
 
-                // Check whether a session already exists for device
-                if (!this.store.checkSessionExists(address)) {
-                    console.log("No session exists, creating new");
-                    // Build session and process prekeys
-                    const session = new libsignal.SessionBuilder(this.store, address);
-                    await session.processPreKey(preKeyBundle)
-                }
+                // Build session and process prekeys
+                const session = new libsignal.SessionBuilder(this.store, address);
+                await session.processPreKey(preKeyBundle)
+            }
+
+            //Amalgamate all required recipient addresses (those with new sessions and those with pre-esisting)
+            let allRecipientAddresses = newDevices.map((i) => i.address)
+            allRecipientAddresses = [...allRecipientAddresses, ...preexistingSessionsForUser.map(o => o.address)]
+
+            for (let address of allRecipientAddresses) {
+
+                console.log("Sending message to: " + address);
 
                 // Actually encrypt message
+                address = new libsignal.SignalProtocolAddress.fromString(address)
                 const sessionCipher = new libsignal.SessionCipher(this.store, address);
                 const messageContent = await sessionCipher.encrypt(content)
-
-                console.log(messageContent);
                 
 
                 // Push message to array which will be sent to server
                 messages.push({
                     senderAddress: localDeviceAddress,
-                    recipientAddress: device.address,
+                    recipientAddress: address.toString(),
                     content: JSON.stringify(messageContent) //Stringify the content object
                 })
-            } //for (let device of availableDevices) {
+
+            }
             
             // Send messages to server
             response = await this.fetchWithJWTCheck(this.baseUrl+"messages/", {
@@ -519,8 +526,6 @@ export default class Api {
     // Converts a preKeyBundle obtained from the server (in which the keys are strings) to 
     //   one useable by the signal protocol (in which keys are array buffers)
     preKeyBundleStringToArrayBuffer = (preKeyBundle) => {
-        console.log(preKeyBundle);
-        
         preKeyBundle.identityKey = util.toArrayBuffer(preKeyBundle.identityKey, 'base64')
         preKeyBundle.preKey.publicKey =  util.toArrayBuffer(preKeyBundle.preKey.publicKey, 'base64')
         preKeyBundle.signedPreKey.publicKey = util.toArrayBuffer(preKeyBundle.signedPreKey.publicKey, 'base64')

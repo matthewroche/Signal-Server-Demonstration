@@ -56,7 +56,7 @@ class App extends Component {
     if (loginResult) {
       this.setState({displayType: 'message', username: this.state.usernameText})
     } else {
-      alert("There is currently a problem logging in. See readme. Retrying repetedly should eventually work")
+      alert("Login Failed")
     }
   }
 

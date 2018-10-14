@@ -58,6 +58,7 @@ class MessageList(APIView):
                     return errors.not_message_owner
 
         for messageId in messageList:
+            message = Message.objects.get(id=messageId)
             message.delete()
 
         return Response(response, status=status.HTTP_200_OK)
@@ -145,7 +146,14 @@ class PreKeyBundleView(APIView):
         if not Device.objects.filter(user=user).exists():
             return errors.no_device
 
-        devices = user.device_set.all()
+        # Get array of devices excluded by request query params
+        excludedDevices = self.request.query_params.get('exclude', None)
+        if excludedDevices:
+            excludedDevices = json.loads(excludedDevices)
+
+        print(excludedDevices)        
+
+        devices = user.device_set.all().exclude(registrationId__in=excludedDevices)
         serialisedDeviceData = []
 
         # Check prekey available for every device before proceeding
