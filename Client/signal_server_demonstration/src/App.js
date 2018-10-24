@@ -19,13 +19,6 @@ class App extends Component {
   signedPreKeyCreationDate = undefined
   api = new Api("http://127.0.0.1:8000/", new SignalProtocolStore())
 
-  componentDidMount = async () => {
-    const userobject = await this.api.checkUserExistsLocally()
-    if (userobject) {
-      this.setState({displayType: 'message', username: userobject.username})
-    }
-  }
-
   // Changes the username in state when the input changes
   handleUserNameTextChange = (e) => {
     this.setState({
@@ -60,9 +53,15 @@ class App extends Component {
     }
   }
 
-  // Logs a user out and deletes their device
+  // Logs a user out
   handleLogOutSubmit = async (e) => {
     await this.api.logUserOut()
+    this.setState({displayType: 'register', username: undefined})
+  }
+
+  // Logs a user out and deletes their device
+  handleDeleteDevice = async (e) => {
+    await this.api.deleteDevice()
     this.setState({displayType: 'register', username: undefined})
   }
 
@@ -141,6 +140,7 @@ class App extends Component {
                   <button onClick={this.handleSendMessage}>Submit</button>
 
                   <button onClick={this.handleLogOutSubmit}>Log Out</button>
+                  <button onClick={this.handleDeleteDevice}>Delete Device</button>
 
                 </div>
                 <div className="User-Received-Messages-Column">

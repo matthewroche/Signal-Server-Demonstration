@@ -56,28 +56,37 @@ export default class Api {
 
     // Handles logging an existing user in to the server, obtains a JWT and registers the device
     // Arguments:
-    //   username: The user's desired username (Required)
-    //   password: The user's desired password (Required)
+    //   username: The user's username (Required)
+    //   password: The user's password (Required)
     // Returns:
     //   A promise which when complete will return on object with the device's details and the current JWT
     logUserIn = async (username, password) => {
-        await this.store.storeUser(username, password) //Store the user details
-        await this.obtainJwt() // Get a JWT
-        return(this.registerDevice()) // Return the promise to register the device
+        try {
+            await this.store.storeUser(username, password) //Store the user details
+            await this.obtainJwt() // Get a JWT
+
+            if (! await this.store.getLocalRegistrationId()) {
+                console.log('Registering a new device');
+                return(this.registerDevice()) // Return the promise to register the device if the device is not previously registered
+            } else {
+                return(true)
+            }
+        } catch (e) {
+            return(false)
+        }
     }
 
-    // Handles checking whether a user is stored locally and return's their details if so
+    // Handles logging a user out locally
     // Arguments:
-    //   none
+    //   None
     // Returns:
-    //   An object containing the user's username and password
-    checkUserExistsLocally = async () => {
-        const userobject = await this.store.loadUser() // Get the stored user details
-        if (userobject && userobject.username) {  // If a user exists
-            userobject.address = await this.store.loadAddress() // Load the device address
-            return userobject // Return an object containing the user's details and the address
-        } else {
-            return false
+    //   True (if successful)
+    logUserOut = async () => {
+        try {
+            await this.store.clearUser() //Delete stored user details
+            return true
+        } catch (e) {
+            console.log(e)
         }
     }
 
@@ -86,7 +95,7 @@ export default class Api {
     //   None
     // Returns:
     //   True (if successful)
-    logUserOut = async () => {
+    deleteDevice = async () => {
         try {
             const registrationId = await this.store.getLocalRegistrationId()
             let response = await this.fetchWithJWTCheck(this.baseUrl+"users/"+registrationId+"/", {
@@ -132,6 +141,7 @@ export default class Api {
             return response.token
         } catch (e) {
             console.log(e);
+            throw e
         }
     }
 
@@ -152,7 +162,7 @@ export default class Api {
             const address = new libsignal.SignalProtocolAddress(userobject.username, 1); // Make an address
             await this.store.storeAddress(address); // Store the address locally
             await this.store.storeIdentityKeyPair(await this.generateIdentityKey()) // Create and store the identity keys
-            await this.store.put('registrationId', KeyHelper.generateRegistrationId()) //Create and store a registration ID
+            await this.store.storeLocalRegistrationId(KeyHelper.generateRegistrationId()) //Create and store a registration ID
 
             //Create preKeys
             let preKeys = []
@@ -163,11 +173,15 @@ export default class Api {
             }
             
             // Create signed preKey
-            const signedPreKey = await this.generateSignedPreKey(await this.store.getIdentityKeyPair(), 1) // GEnerate key
+            
+            const signedPreKey = await this.generateSignedPreKey(await this.store.getIdentityKeyPair(), 1) // Generate key
             await this.store.storeSignedPreKey(1, signedPreKey.keyPair); // Store the key locally
             // Signed prekeys are stored on the server below
 
             const registrationId = await this.store.getLocalRegistrationId()
+
+            console.log(registrationId);
+            
 
             // Send keys to server
             // All keys are converted to base64 strings
@@ -222,7 +236,7 @@ export default class Api {
 
         try {
 
-            const localDeviceAddress = await this.store.loadAddress()
+            const localDeviceAddress = (await this.store.loadAddress()).toString()
 
             content = util.toArrayBuffer(content); //Turn the message string to a buffer
             let newDevices = []
@@ -259,8 +273,14 @@ export default class Api {
                 // Need to convert keys from strings returned by server to ArrayBuffers
                 const preKeyBundle = this.preKeyBundleStringToArrayBuffer(device);
 
+                console.log(preKeyBundle);
+                
+
                 // Build session and process prekeys
                 const session = new libsignal.SessionBuilder(this.store, address);
+
+                console.log(session);
+                
                 await session.processPreKey(preKeyBundle)
             }
 
@@ -286,6 +306,9 @@ export default class Api {
                 })
 
             }
+
+            console.log(messages);
+            
             
             // Send messages to server
             response = await this.fetchWithJWTCheck(this.baseUrl+"messages/", {
