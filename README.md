@@ -1,5 +1,4 @@
 ## ToDo
-- Handle multiple user devices (increment device number in address appropriately)
 - Improve documentation
 - Rate-limit pre-key requests from server
 

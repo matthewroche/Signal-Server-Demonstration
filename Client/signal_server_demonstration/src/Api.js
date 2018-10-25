@@ -158,8 +158,24 @@ export default class Api {
 
             const userobject = await this.store.loadUser() //Get the current user's details
 
+            // Get user's current devices to calculate address of this device
+            let response = await this.fetchWithJWTCheck(this.baseUrl+"users/", {
+                method: "GET",
+                mode: "cors",
+                headers: {
+                    "Content-Type": "application/json; charset=utf-8"
+                }
+            })
+            response = await response.json()
+            const currentDeviceIDs = response.map((i) => parseInt(i.address.split(".")[1], 10))
+            let thisDeviceID = 1
+            if (currentDeviceIDs.length > 0) {
+                thisDeviceID = Math.max(...currentDeviceIDs) + 1
+            }
+            
+
             //Create identity
-            const address = new libsignal.SignalProtocolAddress(userobject.username, 1); // Make an address
+            const address = new libsignal.SignalProtocolAddress(userobject.username, thisDeviceID); // Make an address
             await this.store.storeAddress(address); // Store the address locally
             await this.store.storeIdentityKeyPair(await this.generateIdentityKey()) // Create and store the identity keys
             await this.store.storeLocalRegistrationId(KeyHelper.generateRegistrationId()) //Create and store a registration ID
@@ -173,20 +189,16 @@ export default class Api {
             }
             
             // Create signed preKey
-            
             const signedPreKey = await this.generateSignedPreKey(await this.store.getIdentityKeyPair(), 1) // Generate key
             await this.store.storeSignedPreKey(1, signedPreKey.keyPair); // Store the key locally
             // Signed prekeys are stored on the server below
 
             const registrationId = await this.store.getLocalRegistrationId()
 
-            console.log(registrationId);
-            
-
             // Send keys to server
             // All keys are converted to base64 strings
             // Only public keys are sent to the server
-            let response = await this.fetchWithJWTCheck(this.baseUrl+"users/"+registrationId+"/", {
+            response = await this.fetchWithJWTCheck(this.baseUrl+"users/"+registrationId+"/", {
                 method: "POST",
                 mode: "cors",
                 body: JSON.stringify({
@@ -273,13 +285,8 @@ export default class Api {
                 // Need to convert keys from strings returned by server to ArrayBuffers
                 const preKeyBundle = this.preKeyBundleStringToArrayBuffer(device);
 
-                console.log(preKeyBundle);
-                
-
                 // Build session and process prekeys
                 const session = new libsignal.SessionBuilder(this.store, address);
-
-                console.log(session);
                 
                 await session.processPreKey(preKeyBundle)
             }
@@ -306,9 +313,6 @@ export default class Api {
                 })
 
             }
-
-            console.log(messages);
-            
             
             // Send messages to server
             response = await this.fetchWithJWTCheck(this.baseUrl+"messages/", {
@@ -362,7 +366,9 @@ export default class Api {
                 message.content = JSON.parse(message.content) //Parse the content object from string
                 message.senderAddress = new libsignal.SignalProtocolAddress.fromString(message.senderAddress) //Create a device address
                 message.sender = message.senderAddress.getName() // Get user readable name
+                
                 const sessionCipher = new libsignal.SessionCipher(this.store, message.senderAddress); //Create a cipher
+
                 if (message.content.type === 3) {
                     // Decrypting preKeyWhisperMessages
                     console.log("Decrypting PreKeyWhisperMessage");
