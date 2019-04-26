@@ -1,4 +1,5 @@
 ## ToDo
+- Improve API calls
 - Improve documentation
 - Rate-limit pre-key requests from server
 
@@ -26,3 +27,10 @@ npm start
 ## Documentation of API
 
 For now, documentation is [kept here](https://web.postman.co/collections/3546016-8d3ac105-62f9-4d89-a78b-28f3998be4fd?workspace=a31dd538-28c1-4b0a-8670-ae88cfba1382)
+
+
+## Reset database
+
+```bash
+python manage.py flush
+```

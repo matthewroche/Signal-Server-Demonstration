@@ -98,7 +98,7 @@ export default class Api {
     deleteDevice = async () => {
         try {
             const registrationId = await this.store.getLocalRegistrationId()
-            let response = await this.fetchWithJWTCheck(this.baseUrl+"users/"+registrationId+"/", {
+            let response = await this.fetchWithJWTCheck(this.baseUrl+"device/"+registrationId+"/", {
                 method: "DELETE",
                 mode: "cors",
                 body: JSON.stringify({}),
@@ -157,22 +157,9 @@ export default class Api {
         try {
 
             const userobject = await this.store.loadUser() //Get the current user's details
-
-            // Get user's current devices to calculate address of this device
-            let response = await this.fetchWithJWTCheck(this.baseUrl+"users/", {
-                method: "GET",
-                mode: "cors",
-                headers: {
-                    "Content-Type": "application/json; charset=utf-8"
-                }
-            })
-            response = await response.json()
-            const currentDeviceIDs = response.map((i) => parseInt(i.address.split(".")[1], 10))
-            let thisDeviceID = 1
-            if (currentDeviceIDs.length > 0) {
-                thisDeviceID = Math.max(...currentDeviceIDs) + 1
-            }
             
+            // Users can only have one device, so device ID must be 1
+            let thisDeviceID = 1
 
             //Create identity
             const address = new libsignal.SignalProtocolAddress(userobject.username, thisDeviceID); // Make an address
@@ -198,7 +185,7 @@ export default class Api {
             // Send keys to server
             // All keys are converted to base64 strings
             // Only public keys are sent to the server
-            response = await this.fetchWithJWTCheck(this.baseUrl+"users/"+registrationId+"/", {
+            let response = await this.fetchWithJWTCheck(this.baseUrl+"device/"+registrationId+"/", {
                 method: "POST",
                 mode: "cors",
                 body: JSON.stringify({
@@ -251,71 +238,68 @@ export default class Api {
             const localDeviceAddress = (await this.store.loadAddress()).toString()
 
             content = util.toArrayBuffer(content); //Turn the message string to a buffer
-            let newDevices = []
+            let address = ""
             let messages = []
 
             // Get devices we already have sessions for for this user
             const preexistingSessionsForUser = await this.store.checkPreExistingSessionsForUser(recipientUsername)
-
-            // Get recipient's current registered devices, excluding those with existing sessions
-            let url = new URL(this.baseUrl+"prekeybundle/"+recipientUsername+"/")
-            const params = {exclude: JSON.stringify(preexistingSessionsForUser.map(o => o.registrationId))}
-            Object.keys(params).forEach(key => url.searchParams.append(key, params[key]))
             
-            let response = await this.fetchWithJWTCheck(url, {
-                method: "GET",
-                mode: "cors",
-                headers: {
-                    "Content-Type": "application/json; charset=utf-8"
-                },
-            })
+            // If no pre-existing session
+            if (preexistingSessionsForUser.length === 0) {
 
-            if (response.status === 200) {
-                newDevices = await response.json() //If successful parse JSON
-            } else {
-                throw await this.handleFetchError("Error getting devices", response)
-            }
+                let newDevice = {}
 
-            for (let device of newDevices) { // For each of the recipient's new devices
+                // Get recipient's current registered device
+                let url = new URL(this.baseUrl+"prekeybundle/"+recipientUsername+"/")
+                let response = await this.fetchWithJWTCheck(url, {
+                    method: "GET",
+                    mode: "cors",
+                    headers: {
+                        "Content-Type": "application/json; charset=utf-8"
+                    },
+                })
+    
+                if (response.status === 200) {
+                    newDevice = await response.json() //If successful parse JSON
+                } else {
+                    throw await this.handleFetchError("Error getting devices", response)
+                }
 
-                console.log('Creating new session for device: ' + device.address);
+                console.log('Creating new session for device: ' + newDevice.address);
 
-                const address = new libsignal.SignalProtocolAddress.fromString(device.address) //Calculate recipient's address
+                address = newDevice.address
+
+                let addressFromString = new libsignal.SignalProtocolAddress.fromString(newDevice.address) //Calculate recipient's address
 
                 // Need to convert keys from strings returned by server to ArrayBuffers
-                const preKeyBundle = this.preKeyBundleStringToArrayBuffer(device);
+                const preKeyBundle = this.preKeyBundleStringToArrayBuffer(newDevice);
 
                 // Build session and process prekeys
-                const session = new libsignal.SessionBuilder(this.store, address);
+                const session = new libsignal.SessionBuilder(this.store, addressFromString);
                 
                 await session.processPreKey(preKeyBundle)
+            } else {
+                // If a pre-existing session exists
+                address = preexistingSessionsForUser[0].address
             }
 
-            //Amalgamate all required recipient addresses (those with new sessions and those with pre-esisting)
-            let allRecipientAddresses = newDevices.map((i) => i.address)
-            allRecipientAddresses = [...allRecipientAddresses, ...preexistingSessionsForUser.map(o => o.address)]
+            console.log("Sending message to: " + address);
 
-            for (let address of allRecipientAddresses) {
+            // Actually encrypt message
+            address = new libsignal.SignalProtocolAddress.fromString(address)
+            const sessionCipher = new libsignal.SessionCipher(this.store, address);
+            const messageContent = await sessionCipher.encrypt(content)
+            
 
-                console.log("Sending message to: " + address);
-
-                // Actually encrypt message
-                address = new libsignal.SignalProtocolAddress.fromString(address)
-                const sessionCipher = new libsignal.SessionCipher(this.store, address);
-                const messageContent = await sessionCipher.encrypt(content)
-                
-
-                // Push message to array which will be sent to server
-                messages.push({
-                    senderAddress: localDeviceAddress,
-                    recipientAddress: address.toString(),
-                    content: JSON.stringify(messageContent) //Stringify the content object
-                })
-
-            }
+            // Push message to array which will be sent to server
+            messages.push({
+                senderAddress: localDeviceAddress,
+                recipientAddress: address.toString(),
+                content: JSON.stringify(messageContent) //Stringify the content object
+            })
             
             // Send messages to server
-            response = await this.fetchWithJWTCheck(this.baseUrl+"messages/", {
+            let response = await this.fetchWithJWTCheck(this.baseUrl+"messages/", {
                 method: "POST",
                 mode: "cors",
                 body: JSON.stringify(messages),
@@ -345,9 +329,8 @@ export default class Api {
     retrieveMessages = async () => {
 
         try {
-            const registrationId = await this.store.getLocalRegistrationId()
 
-            let response = await this.fetchWithJWTCheck(this.baseUrl+"messages/"+registrationId+"/", {
+            let response = await this.fetchWithJWTCheck(this.baseUrl+"messages/", {
                 method: "GET",
                 mode: "cors",
                 headers: {
@@ -411,8 +394,6 @@ export default class Api {
     // Returns: 
     updateIdentity = async () => {
 
-        const registrationId = await this.store.getLocalRegistrationId()
-
         // Checking preKeys:
         try {
             // Check preKey number remaining
@@ -430,7 +411,7 @@ export default class Api {
                 preKeys = preKeys.map((i) => {
                     return {keyId: i.keyId, publicKey: util.toString(i.keyPair.pubKey, 'base64')} // Strip private keys before sending to server
                 })
-                let response = await this.fetchWithJWTCheck(this.baseUrl+"prekeys/"+registrationId+"/", {
+                let response = await this.fetchWithJWTCheck(this.baseUrl+"prekeys/", {
                     method: "POST",
                     mode: "cors",
                     body: JSON.stringify({preKeys: preKeys}),
@@ -471,7 +452,7 @@ export default class Api {
                 const signedPreKey = await this.generateSignedPreKey(await this.store.getIdentityKeyPair(), newSignedPreKeyId)
                 await this.store.storeSignedPreKey(newSignedPreKeyId, signedPreKey.keyPair); // Store locally
                 // Send to server
-                let response = await this.fetchWithJWTCheck(this.baseUrl+"signedprekey/"+registrationId+"/", {
+                let response = await this.fetchWithJWTCheck(this.baseUrl+"signedprekey/", {
                     method: "POST",
                     mode: "cors",
                     body: JSON.stringify({signedPreKey: { //Strip privKey

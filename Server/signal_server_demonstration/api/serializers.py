@@ -46,8 +46,8 @@ class DeviceSerializer(serializers.Serializer):
     signedPreKey = SignedPreKeySerializer()
     def create(self, validated_data):
         user = self.context['user']
-        # Limit to max 3 devices
-        if user.device_set.count() > 2:
+        # Limit to max 1 device for security reasons
+        if hasattr(user, "device"):
             raise PermissionDenied()
         signedPreKey = validated_data.pop('signedPreKey')
         preKeys = validated_data.pop('preKeys')

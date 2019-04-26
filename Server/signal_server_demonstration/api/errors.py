@@ -8,7 +8,7 @@ no_device = Response({
 
 device_exists = Response({
     "code": "device_exists",
-    "message": "A device with this registrationId has already been created for this user"
+    "message": "A device has already been created for this user"
 }, status=status.HTTP_403_FORBIDDEN)
 
 no_prekeys = Response({

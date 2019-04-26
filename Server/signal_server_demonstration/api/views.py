@@ -15,6 +15,18 @@ from urllib.parse import unquote, quote
 
 class MessageList(APIView):
 
+    # User can get a list of messages for their device
+    def get(self, request, **kwargs):
+        user = self.request.user
+
+        # Check device exists and owned by user
+        if not hasattr(user, "device"):
+            return Response("Device does not exist", status=status.HTTP_403_FORBIDDEN)
+            
+        messages = user.device.received_messages.all()
+        serializer = MessageSerializer(messages, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     # User can post multiple messages. They will be defined as the sender
     def post(self, request):
 
@@ -50,10 +62,12 @@ class MessageList(APIView):
         response = []
 
         for messageId in messageList:
+            # Check message exists
             if not Message.objects.filter(id=messageId).exists():
                 return errors.non_existant_message
             else:
                 message = Message.objects.get(id=messageId)
+                # Check user owns meaage
                 if not message.recipient.user == user:
                     return errors.not_message_owner
 
@@ -63,44 +77,9 @@ class MessageList(APIView):
 
         return Response(response, status=status.HTTP_200_OK)
 
-class DeviceMessageList(APIView):
-
-    # User can get a list of messages for their device
-    def get(self, request, **kwargs):
-        user = self.request.user
-        requestedDevice = kwargs['deviceRegistrationId']
-
-        if not user.device_set.filter(registrationId=requestedDevice).exists():
-            return Response("Device does not exist", status=status.HTTP_403_FORBIDDEN)
-            
-        messages = user.device_set.get(registrationId=requestedDevice).received_messages.all()
-        serializer = MessageSerializer(messages, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-        
-class UserView(APIView):
-    def get(self, request, **kwargs):
-        user = self.request.user
-        devices = []
-        for device in user.device_set.all():
-            deviceDict = device.__dict__
-            deviceDict['preKeys'] = device.prekey_set.all()
-            deviceDict['signedPreKey'] = device.signedprekey
-            devices.append(DeviceSerializer(deviceDict).data)
-        return Response(devices, status=status.HTTP_200_OK)
-
 class DeviceView(APIView):
-    def get(self, request, **kwargs):
-        try:
-            user = self.request.user
-            registrationId = kwargs['deviceRegistrationId']
-            device = Device.objects.get(user=user, registrationId=registrationId)
-            deviceDict = device.__dict__
-            deviceDict['preKeys'] = device.prekey_set.all()
-            deviceDict['signedPreKey'] = device.signedprekey
-            serializer = DeviceSerializer(deviceDict)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        except Device.DoesNotExist:
-            return errors.no_device
+
+    # User can register details of a new device
     def post(self, request, **kwargs):
 
         try:
@@ -108,7 +87,8 @@ class DeviceView(APIView):
             user = self.request.user
             registrationId = kwargs['deviceRegistrationId']
 
-            if Device.objects.filter(user=user, registrationId=registrationId).exists():
+            # Check device does not already exist
+            if hasattr(user, "device"):
                 return errors.device_exists
 
             deviceData = request.data
@@ -123,82 +103,73 @@ class DeviceView(APIView):
         except PermissionDenied:
             return errors.reached_max_devices
 
-
+    # User can delete a device they own
     def delete(self, requested, **kwargs):
         user = self.request.user
-        registrationId = kwargs['deviceRegistrationId']
-        if not Device.objects.filter(user=user, registrationId=registrationId).exists():
+        # Check device exists and owned by user
+        if not hasattr(user, "device"):
             return errors.no_device
-        device = Device.objects.get(user=user, registrationId=registrationId)
+        device = user.device
         device.delete()
         return Response({"code": "device_deleted", "message": "Device successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
 
 
 class PreKeyBundleView(APIView):
+    # User can optain a preKeyBundle from another user
     def get(self, request, **kwargs):
 
+        # Check user exists
         if not User.objects.filter(username= kwargs['requestedUsername']).exists():
                 return Response("User does not exist", status=status.HTTP_403_FORBIDDEN)
 
         # Get user details object
         user = User.objects.get(username=kwargs['requestedUsername'])
 
-        if not Device.objects.filter(user=user).exists():
+        # Check user has a registered device
+        if not hasattr(user, "device"):
             return errors.no_device
 
-        # Get array of devices excluded by request query params
-        excludedDevices = self.request.query_params.get('exclude', None)
-        if excludedDevices:
-            excludedDevices = json.loads(excludedDevices)
+        device = user.device
 
-        print(excludedDevices)        
+        # Check prekey available for device before proceeding
+        if device.prekey_set.count() == 0:
+            # Handle no pre keys available for device - throw an error for security
+            return errors.no_prekeys
 
-        devices = user.device_set.all().exclude(registrationId__in=excludedDevices)
-        serialisedDeviceData = []
+        # Build pre key bundle, removing a preKey from the requested user's list
+        preKeyToReturn = device.prekey_set.all()[:1].get()
+        signedPreKey = device.signedprekey
+    
+        preKeyBundle = device.__dict__
+        preKeyBundle['preKey'] = preKeyToReturn
+        preKeyBundle['signedPreKey'] = signedPreKey
+        serializer = PreKeyBundleSerializer(preKeyBundle)
 
-        # Check prekey available for every device before proceeding
-        for device in devices:
-            if device.prekey_set.count() == 0:
-                # Handle no pre keys available
-                return errors.no_prekeys
-
-
-        for device in devices:
-
-            # Build pre key bundle, removing a preKey from the requested user's list
-            preKeyToReturn = device.prekey_set.all()[:1].get()
-            signedPreKey = device.signedprekey
-        
-            preKeyBundle = device.__dict__
-            preKeyBundle['preKey'] = preKeyToReturn
-            preKeyBundle['signedPreKey'] = signedPreKey
-            serializer = PreKeyBundleSerializer(preKeyBundle)
-
-            # Update stored pre key
-            preKeyToReturn.delete()
-
-            serialisedDeviceData.append(serializer.data)
+        # Update stored pre key
+        preKeyToReturn.delete()
 
         # Return bundle
-        return Response(serialisedDeviceData, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=status.HTTP_200_OK)
             
         
 
 class UserPreKeys(APIView):
+
+    # User can post a new set of preKeys
     def post(self, request, **kwargs):
 
         try: 
 
             user = self.request.user
-            registrationId = kwargs['deviceRegistrationId']
 
-            if not Device.objects.filter(user=user, registrationId=registrationId).exists():
+            # Check device exiss and owned by user
+            if not hasattr(user, "device"):
                 return errors.no_device
                 
             newPreKeys = request.data['preKeys']
 
             for x in newPreKeys:
-                serializer = PreKeySerializer(data=x, context={'user': user, 'registrationId': registrationId})
+                serializer = PreKeySerializer(data=x, context={'user': user, 'registrationId': user.device.registrationId})
 
                 if not serializer.is_valid():
                     return errors.invalidData(serializer.errors)
@@ -212,17 +183,18 @@ class UserPreKeys(APIView):
         
 
 class UserSignedPreKeys(APIView):
+    # User can post a new signedPreKey
     def post(self, request, **kwargs):
 
         user = self.request.user
-        registrationId = kwargs['deviceRegistrationId']
 
-        if not Device.objects.filter(user=user, registrationId=registrationId).exists():
+        # Check device exists and owned by user
+        if not hasattr(user, "device"):
             return errors.no_device
             
-        device = Device.objects.filter(user=user, registrationId=registrationId).get()
+        device = user.device
         newSignedPreKey = request.data['signedPreKey']
-        serializer = SignedPreKeySerializer(data=newSignedPreKey, context={'user': user, 'registrationId': registrationId})
+        serializer = SignedPreKeySerializer(data=newSignedPreKey, context={'user': user, 'registrationId': device.registrationId})
 
         if not serializer.is_valid():
             return errors.invalidData(serializer.errors)
