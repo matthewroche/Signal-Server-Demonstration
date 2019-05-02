@@ -86,6 +86,15 @@ SignalProtocolStore.prototype = {
     this.clearUser()
     return Promise.resolve(true);
   },
+  // Removes all data from the store and forgets the current user
+  clearDeviceData: function() {
+    for (var key in this.store) {
+      if (key.startsWith(this.userDetails.username)) {
+        this.store.removeItem(key);
+      }
+    }
+    return Promise.resolve(true);
+  },
   
 
 

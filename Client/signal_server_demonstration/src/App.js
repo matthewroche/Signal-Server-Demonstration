@@ -45,11 +45,29 @@ class App extends Component {
 
   // Logs a user in a stores the JWT
   handleLogInSubmit = async (e) => {
-    const loginResult = await this.api.logUserIn(this.state.usernameText, this.state.passwordText)
-    if (loginResult) {
+    try {
+      await this.api.logUserIn(this.state.usernameText, this.state.passwordText)
       this.setState({displayType: 'message', username: this.state.usernameText})
-    } else {
-      alert("Login Failed")
+    } catch (e) {
+      if (e.toString() === "Error: device_exists") {
+        if (window.confirm('A device alreay exists, would you like to delete it and create a new device? All recipients of your messages will recieve an alert. Any other devices you have will stop working.')) {
+          
+          try {
+            await this.api.deleteDevice()
+            await this.api.registerDevice()
+            this.setState({displayType: 'message', username: this.state.usernameText})
+
+          } catch (e) {
+            alert("Creating a new device failed")
+            console.log(e);
+          }
+        } 
+      } else {
+        console.log(e);
+        
+        alert("Login Failed")
+      }
+      
     }
   }
 
@@ -81,9 +99,15 @@ class App extends Component {
   //Handles sending the message to the server
   handleSendMessage = async (e) => {
 
-    const response = await this.api.sendMessage(this.state.messageText, this.state.recipientUserNameText)
-    if (response) {
+    try {
+      await this.api.sendMessage(this.state.messageText, this.state.recipientUserNameText)
       alert("Sent successfully")
+    } catch (e) {
+      if (e.toString() === "Error: device_changed") {
+        alert("Device has changed. Message not sent")
+      } else {
+        console.log(e)
+      }
     }
 
   }
@@ -91,16 +115,27 @@ class App extends Component {
   //Handles receiving the message
   handleCheckMessages = async () => {
 
-    const newMessages = await this.api.retrieveMessages()
-    
-    const messageArray = this.state.receivedMessages
-    for (const message of newMessages) {
-      messageArray.unshift(message)
+    let newMessages = []
+
+    try {
+      newMessages = await this.api.retrieveMessages()
+
+      const messageArray = this.state.receivedMessages
+      for (let message of newMessages) {
+        messageArray.unshift(message)
+      }
+      if (newMessages.length === 0) {
+        alert("No new messages")
+      }
+      this.setState({receivedMessages: messageArray})
+
+    } catch (e) {
+      if (e.toString() === "Error: device_changed") {
+        alert("Device has changed. Cannot Check Messages")
+      } else {
+        console.log(e)
+      }
     }
-    if (newMessages.length === 0) {
-      alert("No new messages")
-    }
-    this.setState({receivedMessages: messageArray})
 
   }
 
