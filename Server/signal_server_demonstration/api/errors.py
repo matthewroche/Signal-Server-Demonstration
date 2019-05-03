@@ -48,7 +48,12 @@ incorrect_arguments = Response({
 
 device_changed = Response({
     "code": "device_changed",
-    "message": "Device has changed"
+    "message": "Own device has changed"
+}, status=status.HTTP_403_FORBIDDEN)
+
+recipient_identity_changed = Response({
+    "code": "recipient_identity_changed",
+    "message": "Recipients device has changed"
 }, status=status.HTTP_403_FORBIDDEN)
 
 def invalidData(errors):

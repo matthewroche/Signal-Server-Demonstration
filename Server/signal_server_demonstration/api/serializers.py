@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied
 class MessageSerializer(serializers.Serializer):
     id = serializers.ReadOnlyField()
     senderAddress = serializers.SerializerMethodField('get_sender_address')
+    senderRegistrationID = serializers.SerializerMethodField('get_sender_registration_id')
     content = serializers.CharField(max_length=1000, min_length=0)
     recipientAddress = serializers.SerializerMethodField('get_recipient_address')
     def create(self, validated_data):
@@ -15,6 +16,8 @@ class MessageSerializer(serializers.Serializer):
         return obj.sender.address
     def get_recipient_address(self, obj):
         return obj.recipient.address
+    def get_sender_registration_id(self, obj):
+        return obj.sender.registrationId
 
 class PreKeySerializer(serializers.Serializer):
     keyId = serializers.IntegerField(min_value=0, max_value= 999999)

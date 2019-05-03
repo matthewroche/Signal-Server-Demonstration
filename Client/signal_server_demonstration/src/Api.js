@@ -61,18 +61,14 @@ export default class Api {
     // Returns:
     //   A promise which when complete will return on object with the device's details and the current JWT
     logUserIn = async (username, password) => {
-        try {
-            await this.store.storeUser(username, password) //Store the user details
-            await this.obtainJwt() // Get a JWT
+        await this.store.storeUser(username, password) //Store the user details
+        await this.obtainJwt() // Get a JWT
 
-            if (! await this.store.getLocalRegistrationId()) {
-                console.log('Registering a new device');
-                return(this.registerDevice()) // Return the promise to register the device if the device is not previously registered
-            } else {
-                return(true)
-            }
-        } catch (e) {
-            return(e)
+        if (! await this.store.getLocalRegistrationId()) {
+            console.log('Registering a new device');
+            return(this.registerDevice()) // Return the promise to register the device if the device is not previously registered
+        } else {
+            return(true)
         }
     }
 
@@ -311,67 +307,81 @@ export default class Api {
     //   An array of decrypted messages
     retrieveMessages = async () => {
 
-        try {
+        const localRegistrationId = await this.store.getLocalRegistrationId()
 
-            const localRegistrationId = await this.store.getLocalRegistrationId()
+        let response = await this.fetchWithJWTCheck(this.baseUrl+"messages/"+localRegistrationId+"/", {
+            method: "GET",
+            mode: "cors",
+            headers: {
+                "Content-Type": "application/json; charset=utf-8"
+            },
+        })
 
-            let response = await this.fetchWithJWTCheck(this.baseUrl+"messages/"+localRegistrationId+"/", {
-                method: "GET",
+        if (response.status !== 200) {
+            throw await this.handleFetchError("Error getting messages from server", response)
+        }
+        
+        const messages = await response.json() // If successful parse JSON
+
+        let messagesToDisplay = []
+
+        for (let message of messages) { // For each message
+            
+            message.content = JSON.parse(message.content) //Parse the content object from string
+
+            // Check our registrationID hasn't changed since session created with remote user
+            if (message.content.registrationId !== localRegistrationId) {
+                console.error("Altered local registration ID");
+                alert("Local identity changed since message sent, skipping message")
+                continue;
+            }
+
+            message.senderAddress = new libsignal.SignalProtocolAddress.fromString(message.senderAddress) //Create a device address
+            message.sender = message.senderAddress.getName() // Get user readable name
+            
+            const sessionCipher = new libsignal.SessionCipher(this.store, message.senderAddress); //Create a cipher
+
+            // Check remote registration ID matches that in current session
+            if (message.senderRegistrationID !== await sessionCipher.getRemoteRegistrationId()) {
+                console.error("Altered remote registration ID");
+                alert("Remote identity changed since message sent, skipping message")
+                continue;
+            }
+
+            if (message.content.type === 3) {
+                // Decrypting preKeyWhisperMessages
+                console.log("Decrypting PreKeyWhisperMessage");
+                message.content = util.toString(await sessionCipher.decryptPreKeyWhisperMessage(message.content.body, 'binary'));
+                messagesToDisplay.push(message)
+            } else {
+                // Decrypting simple whisperMessages
+                console.log("Decrypting WhisperMessage");
+                message.content = util.toString(await sessionCipher.decryptWhisperMessage(message.content.body, 'binary'));
+                messagesToDisplay.push(message)
+            }
+        }
+
+        if (messages.length > 0) {
+            // Delete the retrieved messages
+            response = await this.fetchWithJWTCheck(this.baseUrl+"messages/"+localRegistrationId+"/", {
+                method: "DELETE",
                 mode: "cors",
+                body: JSON.stringify(messages.map(o => o.id)),
                 headers: {
                     "Content-Type": "application/json; charset=utf-8"
                 },
             })
-
-            if (response.status !== 200) {
-                throw await this.handleFetchError("Error getting messages from server", response)
-            }
             
-            const messages = await response.json() // If successful parse JSON
-
-            for (let message of messages) { // For each message
-                
-                message.content = JSON.parse(message.content) //Parse the content object from string
-                message.senderAddress = new libsignal.SignalProtocolAddress.fromString(message.senderAddress) //Create a device address
-                message.sender = message.senderAddress.getName() // Get user readable name
-                
-                const sessionCipher = new libsignal.SessionCipher(this.store, message.senderAddress); //Create a cipher
-
-                if (message.content.type === 3) {
-                    // Decrypting preKeyWhisperMessages
-                    console.log("Decrypting PreKeyWhisperMessage");
-                    message.content = util.toString(await sessionCipher.decryptPreKeyWhisperMessage(message.content.body, 'binary'));
-                } else {
-                    // Decrypting simple whisperMessages
-                    console.log("Decrypting WhisperMessage");
-                    message.content = util.toString(await sessionCipher.decryptWhisperMessage(message.content.body, 'binary'));
-                }
+            if (response.status !== 200) {
+                this.handleFetchError("Error deleting messages from server", response)
             }
-
-            if (messages.length > 0) {
-                // Delete the retrieved messages
-                response = await this.fetchWithJWTCheck(this.baseUrl+"messages/"+localRegistrationId+"/", {
-                    method: "DELETE",
-                    mode: "cors",
-                    body: JSON.stringify(messages.map(o => o.id)),
-                    headers: {
-                        "Content-Type": "application/json; charset=utf-8"
-                    },
-                })
-                
-                if (response.status !== 200) {
-                    this.handleFetchError("Error deleting messages from server", response)
-                }
-            }
-
-            // Update prekeys and signedPrekey
-            this.updateIdentity()
-
-            return(messages)
-
-        } catch (e) {
-            console.log(e);
         }
+
+        // Update prekeys and signedPrekey
+        this.updateIdentity()
+
+        return(messagesToDisplay)
+
     }
 
     // Handles updating preKeys and signed preKeys

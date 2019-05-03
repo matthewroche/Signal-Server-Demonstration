@@ -50,8 +50,11 @@ class MessageList(APIView):
 
         ownUser = self.request.user
         recipientUsername = request.data["recipient"]
-        messageData = request.data["message"]
-
+        try:
+            messageData = request.data["message"]
+        except:
+            return errors.incorrect_arguments
+        
         # Check device exists and owned by user
         if not hasattr(ownUser, "device"):
             return errors.no_device
@@ -71,18 +74,18 @@ class MessageList(APIView):
             return errors.no_recipient_device
         recipientDevice = recipientUser.device
 
-        response = []
+        # Check recipient device registrationId matches that sent in message
+        print(recipientUser.device.registrationId)
+        print(json.loads(messageData)['registrationId'])
+        if not (recipientUser.device.registrationId == int(json.loads(messageData)['registrationId'])):
+            return errors.recipient_identity_changed
 
-        for message in messageData:
-
-            serializer = MessageSerializer(data=message, context={'senderDevice': ownUser.device, 'recipientDevice': recipientDevice})
-            if not serializer.is_valid():
-                response.append(serializer.errors)
-            else: 
-                serializer.save()
-                response.append(serializer.data)
-
-        return Response(response, status=status.HTTP_201_CREATED)
+        serializer = MessageSerializer(data={'content': messageData}, context={'senderDevice': ownUser.device, 'recipientDevice': recipientDevice})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else: 
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # User can delete any message for which they are the recipient
     def delete(self, request, **kwargs):
