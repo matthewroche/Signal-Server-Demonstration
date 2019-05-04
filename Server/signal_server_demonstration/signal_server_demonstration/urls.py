@@ -19,6 +19,3 @@ urlpatterns = [
     url(r'^', include('api.urls')),
 ]
 
-urlpatterns += [
-    url(r'^api-auth/', include('rest_framework.urls')),
-]

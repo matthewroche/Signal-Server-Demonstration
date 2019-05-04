@@ -160,6 +160,7 @@ class DeviceView(APIView):
 
 
 class PreKeyBundleView(APIView):
+    throttle_scope = 'preKeyBundle'
     # User can optain a preKeyBundle from another user
     def get(self, request, **kwargs):
 
